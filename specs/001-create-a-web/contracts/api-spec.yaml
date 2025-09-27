@@ -1,0 +1,439 @@
+openapi: 3.0.0
+info:
+  title: Sydney Techno Event Analytics API
+  version: 1.0.0
+  description: API for uploading CSV data and retrieving event analytics
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+
+paths:
+  /auth/login:
+    post:
+      summary: Login with email magic link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Magic link sent
+        '429':
+          description: Too many requests
+
+  /uploads:
+    post:
+      summary: Upload CSV file for processing
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - platform
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  maxLength: 104857600  # 100MB
+                platform:
+                  type: string
+                  enum: [resident_advisor, humanitix, moshtix]
+      responses:
+        '201':
+          description: Upload created and processing started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Upload'
+        '400':
+          description: Invalid file or platform
+        '413':
+          description: File too large
+
+    get:
+      summary: List all uploads
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, processing, completed, failed]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of uploads
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploads:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Upload'
+                  total:
+                    type: integer
+
+  /uploads/{uploadId}:
+    get:
+      summary: Get upload status and details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Upload details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Upload'
+        '404':
+          description: Upload not found
+
+  /events:
+    get:
+      summary: List all events
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: venue
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+                  total:
+                    type: integer
+
+  /events/{eventId}:
+    get:
+      summary: Get event details with metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event with metrics
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Event'
+                  - type: object
+                    properties:
+                      metrics:
+                        $ref: '#/components/schemas/EventMetrics'
+        '404':
+          description: Event not found
+
+  /metrics/dashboard:
+    get:
+      summary: Get dashboard overview metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardMetrics'
+
+  /metrics/custom:
+    post:
+      summary: Create custom metric definition
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomMetricInput'
+      responses:
+        '201':
+          description: Custom metric created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomMetric'
+
+    get:
+      summary: List custom metrics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of custom metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomMetric'
+
+  /metrics/export:
+    post:
+      summary: Export metrics data
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventIds:
+                  type: array
+                  items:
+                    type: string
+                format:
+                  type: string
+                  enum: [csv, json, pdf]
+                dateFrom:
+                  type: string
+                  format: date
+                dateTo:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: Export file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Upload:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        fileSize:
+          type: integer
+        platform:
+          type: string
+          enum: [resident_advisor, humanitix, moshtix]
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        recordsProcessed:
+          type: integer
+        recordsFailed:
+          type: integer
+        errorLog:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        processedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        date:
+          type: string
+          format: date
+        venue:
+          type: string
+        city:
+          type: string
+        capacity:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [upcoming, completed, cancelled]
+        platform:
+          type: string
+        artists:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artist'
+
+    Artist:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        bio:
+          type: string
+          nullable: true
+
+    EventMetrics:
+      type: object
+      properties:
+        totalRevenue:
+          type: number
+        totalTicketsSold:
+          type: integer
+        averageTicketPrice:
+          type: number
+        sellOutPercentage:
+          type: number
+        earlyBirdConversion:
+          type: number
+        topPostcodes:
+          type: array
+          items:
+            type: object
+            properties:
+              postcode:
+                type: string
+              count:
+                type: integer
+        salesVelocity:
+          type: object
+        customMetrics:
+          type: object
+
+    DashboardMetrics:
+      type: object
+      properties:
+        totalEvents:
+          type: integer
+        totalRevenue:
+          type: number
+        totalTicketsSold:
+          type: integer
+        averageAttendance:
+          type: number
+        topVenues:
+          type: array
+          items:
+            type: object
+        revenueByMonth:
+          type: array
+          items:
+            type: object
+        upcomingEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+
+    CustomMetric:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        formula:
+          type: string
+        category:
+          type: string
+          enum: [revenue, attendance, engagement, custom]
+        isActive:
+          type: boolean
+
+    CustomMetricInput:
+      type: object
+      required:
+        - name
+        - formula
+        - category
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        formula:
+          type: string
+        category:
+          type: string
+          enum: [revenue, attendance, engagement, custom]

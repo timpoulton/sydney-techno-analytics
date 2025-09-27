@@ -1,0 +1,248 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Apple-style Light mode (fallback) */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 211 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 211 100% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 211 100% 50%;
+    --chart-1: 211 100% 50%;
+    --chart-2: 142 71% 45%;
+    --chart-3: 3 100% 60%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 48 96% 53%;
+    --radius: 0.75rem;
+
+    /* Apple System Colors */
+    --apple-blue: 211 100% 50%;
+    --apple-green: 142 71% 45%;
+    --apple-red: 3 100% 60%;
+    --apple-purple: 280 65% 60%;
+    --apple-yellow: 48 96% 53%;
+  }
+
+  /* Apple Dark Mode Theme */
+  :root,
+  .dark {
+    /* Core colors - Apple Dark Theme */
+    --background: 0 0% 0%; /* #000000 - Pure black */
+    --foreground: 0 0% 100%; /* #FFFFFF - White text */
+    --card: 0 0% 11%; /* #1C1C1E - Secondary background */
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 17%; /* #2C2C2E - Tertiary background */
+    --popover-foreground: 0 0% 100%;
+
+    /* Primary - System Blue */
+    --primary: 211 100% 53%; /* #0A84FF */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Gray */
+    --secondary: 0 0% 17%; /* #2C2C2E */
+    --secondary-foreground: 0 0% 100%;
+
+    /* Muted - Secondary Label Color */
+    --muted: 0 0% 20%; /* #333333 */
+    --muted-foreground: 240 5% 60%; /* rgba(235,235,245,0.6) */
+
+    /* Accent - System Blue */
+    --accent: 211 100% 53%; /* #0A84FF */
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive - System Red */
+    --destructive: 3 100% 60%; /* #FF453A */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders and inputs */
+    --border: 0 0% 15%; /* Subtle borders */
+    --input: 0 0% 11%; /* Match card background */
+    --ring: 211 100% 53%; /* System Blue */
+
+    /* Chart colors - Apple System Colors */
+    --chart-1: 211 100% 53%; /* System Blue */
+    --chart-2: 142 71% 45%; /* System Green */
+    --chart-3: 3 100% 60%; /* System Red */
+    --chart-4: 280 65% 60%; /* System Purple */
+    --chart-5: 48 96% 53%; /* System Yellow */
+
+    --radius: 0.75rem; /* 12px Apple standard radius */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply scroll-smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.022em;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+
+  /* Apple Typography Scale */
+  h1 {
+    @apply text-4xl font-bold;
+    letter-spacing: -0.028em;
+  }
+  h2 {
+    @apply text-3xl font-semibold;
+    letter-spacing: -0.026em;
+  }
+  h3 {
+    @apply text-2xl font-semibold;
+    letter-spacing: -0.024em;
+  }
+  p {
+    @apply text-base;
+    line-height: 1.5;
+  }
+}
+
+@layer components {
+  /* Apple-style vibrancy effect */
+  .vibrancy {
+    @apply backdrop-blur-xl bg-card/80 border border-white/10;
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  /* Apple-style card */
+  .apple-card {
+    @apply bg-card rounded-xl border border-border/50;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  }
+
+  /* Apple-style button hover */
+  .apple-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+  .apple-hover:hover {
+    @apply bg-white/10;
+  }
+
+  /* System blur background */
+  .system-blur {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background-color: rgba(0, 0, 0, 0.72);
+  }
+
+  /* Apple focus ring */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background;
+  }
+
+  /* Subtle shadow for depth */
+  .subtle-shadow {
+    box-shadow: 0 2px 8px 0 rgb(0 0 0 / 0.15);
+  }
+
+  /* Apple-style sidebar item */
+  .sidebar-item {
+    @apply px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200;
+  }
+  .sidebar-item:hover {
+    @apply bg-white/5;
+  }
+  .sidebar-item.active {
+    @apply bg-primary text-white;
+  }
+}
+
+@layer utilities {
+  /* Apple-style smooth transitions */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  /* Apple-style scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-white/20 rounded-full;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-white/30;
+  }
+
+  /* Selection color */
+  ::selection {
+    background-color: hsl(var(--primary) / 0.3);
+    color: white;
+  }
+
+  /* Apple-style animation classes */
+  .animate-in {
+    animation: fade-in 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .slide-in {
+    animation: slide-up 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .scale-in {
+    animation: scale-in 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+}

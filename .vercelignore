@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Testing
+*.test.js
+*.spec.js
+
+# Version Control
+.git/
+.gitignore
+
+# Environment files (Vercel will use its own)
+.env.local
+.env.development
+
+# Development files
+.vscode/
+*.log
+
+# Database files
+*.db
+*.sqlite
+prisma/dev.db
+prisma/dev.db-journal
+
+# Temporary files
+.DS_Store
+Thumbs.db

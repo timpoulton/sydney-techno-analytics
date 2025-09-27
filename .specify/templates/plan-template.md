@@ -47,7 +47,11 @@
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] Event-First: Does design prioritize event experience and attendee journey?
+- [ ] Mobile-First: Are interfaces optimized for mobile devices?
+- [ ] Privacy & Trust: Is user data protected with encryption and consent controls?
+- [ ] Performance: Can system handle 10x traffic spikes and meet <2s load times?
+- [ ] Integration: Does it integrate with ticketing systems and social platforms?
 
 ## Project Structure
 
@@ -216,4 +220,4 @@ directories captured above]
 - [ ] Complexity deviations documented
 
 ---
-*Based on Constitution v2.1.1 - See `/memory/constitution.md`*
+*Based on Constitution v1.0.0 - See `.specify/memory/constitution.md`*
