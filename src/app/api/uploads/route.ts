@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient, Platform } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { Platform } from '@prisma/client';
+import prisma from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
     console.log('Upload API called');
+
+    // Check if database is configured
+    if (!process.env.DATABASE_URL) {
+      console.error('DATABASE_URL not configured');
+      return NextResponse.json(
+        {
+          error: 'Database not configured',
+          details: 'Please set up a database following the instructions in DATABASE_SETUP.md'
+        },
+        { status: 503 }
+      );
+    }
 
     // Parse JSON body instead of FormData
     const body = await request.json();
