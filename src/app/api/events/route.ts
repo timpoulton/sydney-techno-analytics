@@ -6,31 +6,50 @@ export async function GET() {
     const prismaModule = await import('@/lib/prisma');
     const prisma = prismaModule.default;
 
+    // Get events without including all tickets (more efficient)
     const events = await prisma.event.findMany({
       orderBy: {
         date: 'desc'
       },
-      include: {
-        tickets: true
+      select: {
+        id: true,
+        name: true,
+        date: true,
+        venue: true,
+        platform: true,
+        status: true,
+        metadata: true,
       }
     });
 
-    // Calculate aggregated data for each event
-    const eventsWithMetrics = events.map((event: any) => {
-      const ticketsSold = event.tickets.reduce((sum: number, ticket: any) => sum + (ticket.sold || 0), 0);
-      const totalRevenue = event.tickets.reduce((sum: number, ticket: any) => sum + Number(ticket.revenue || 0), 0);
+    // Get aggregated ticket data separately for better performance
+    const eventsWithMetrics = await Promise.all(
+      events.map(async (event: any) => {
+        // Get aggregated ticket data for this event
+        const ticketStats = await prisma.ticket.aggregate({
+          where: { eventId: event.id },
+          _sum: {
+            sold: true,
+            revenue: true,
+          },
+          _count: {
+            id: true,
+          }
+        });
 
-      return {
-        id: event.id,
-        name: event.name,
-        date: event.date,
-        venue: event.venue,
-        platform: event.platform,
-        status: event.status,
-        ticketsSold,
-        totalRevenue,
-      };
-    });
+        return {
+          id: event.id,
+          name: event.name,
+          date: event.date,
+          venue: event.venue,
+          platform: event.platform,
+          status: event.status,
+          ticketsSold: ticketStats._sum.sold || 0,
+          totalRevenue: Number(ticketStats._sum.revenue || 0),
+          ticketCount: ticketStats._count.id || 0,
+        };
+      })
+    );
 
     return NextResponse.json(eventsWithMetrics);
 
