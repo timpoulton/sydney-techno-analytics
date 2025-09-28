@@ -100,6 +100,22 @@ export default function UploadPage() {
   };
 
   const processResidentAdvisorData = (data: ParsedRow[]) => {
+    if (!data || data.length === 0) {
+      console.error('processResidentAdvisorData: No data provided');
+      return null;
+    }
+
+    // Validate required columns
+    const requiredColumns = ['Ticket type', 'Price', 'Date purchased'];
+    const firstRow = data[0];
+    const missingColumns = requiredColumns.filter(col => !(col in firstRow));
+
+    if (missingColumns.length > 0) {
+      console.error('Missing required columns for RA format:', missingColumns);
+      setError(`Missing required columns: ${missingColumns.join(', ')}. Please ensure this is a valid Resident Advisor export.`);
+      return null;
+    }
+
     // Group tickets by type
     const ticketGroups = new Map<string, any[]>();
     let eventName = 'Event from RA Import';
@@ -196,6 +212,10 @@ export default function UploadPage() {
           ...ticket,
           ticketType: type,
           quantity: 1,
+          // Ensure consistent field names for API
+          customerEmail: ticket.email,
+          customerPostcode: ticket.postcode,
+          customerName: ticket.billingName,
           marketingOptIn: ticket.marketingOptIn === 'Yes' || ticket.marketingOptIn === true
         });
       });
@@ -220,8 +240,18 @@ export default function UploadPage() {
   const processHumanitixData = (data: ParsedRow[]) => {
     if (!data || data.length === 0) return null;
 
-    // Extract event info from first row
+    // Validate required columns for Humanitix
+    const requiredColumns = ['Event', 'Order id', 'Valid tickets', 'Ticket sales'];
     const firstRow = data[0];
+    const missingColumns = requiredColumns.filter(col => !(col in firstRow));
+
+    if (missingColumns.length > 0) {
+      console.error('Missing required columns for Humanitix format:', missingColumns);
+      setError(`Missing required columns: ${missingColumns.join(', ')}. Please ensure this is a valid Humanitix export.`);
+      return null;
+    }
+
+    // Extract event info from first row
     const eventName = firstRow['Event'] || 'Unknown Event';
     const eventDateStr = firstRow['Event date'] || '';
 
@@ -379,8 +409,27 @@ export default function UploadPage() {
         return;
       }
 
+      // Validate that we have actual ticket data
+      if (processedData.individualTickets?.length === 0 && processedData.tickets?.length === 0) {
+        setError('No valid ticket data found in the CSV file. Please check that the file contains ticket information with prices and dates.');
+        setUploading(false);
+        return;
+      }
+
+      // Additional validation for required data
+      if (!processedData.individualTickets || processedData.individualTickets.length === 0) {
+        console.warn('Warning: No individual tickets found. Upload may result in limited customer data capture.');
+      }
+
       console.log('Sending processed data to API:', {
-        ...processedData,
+        platform,
+        eventName: processedData.eventName,
+        totalTickets: processedData.tickets?.length,
+        individualTicketsCount: processedData.individualTickets?.length,
+        totalAttendees: processedData.totalAttendees,
+        totalRevenue: processedData.totalRevenue,
+        // Show first individual ticket as sample
+        sampleIndividualTicket: processedData.individualTickets?.[0],
         tickets: processedData.tickets?.map((t: any) => ({
           ...t,
           sampleData: undefined // Remove sample data from logs

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizeTicketData, validateUploadData } from '@/lib/csv-validator';
 
 // Platform enum - define locally to avoid Prisma dependency at build time
 enum Platform {
@@ -45,6 +46,15 @@ export async function POST(request: NextRequest) {
 
     if (!platform || !Object.values(Platform).includes(platform as Platform)) {
       return NextResponse.json({ error: 'Invalid platform' }, { status: 400 });
+    }
+
+    // Validate upload data
+    const validation = validateUploadData(processedData, platform);
+    if (!validation.valid) {
+      return NextResponse.json({
+        error: 'Invalid data format',
+        details: validation.errors
+      }, { status: 400 });
     }
 
     // Lazy load Prisma to avoid build-time dependency
@@ -105,8 +115,10 @@ export async function POST(request: NextRequest) {
 
     try {
       // Handle pre-processed Resident Advisor data
-      if (platform === 'RESIDENT_ADVISOR' && processedData.tickets) {
-        console.log('Processing RA data with', processedData.tickets.length, 'ticket types');
+      if (platform === 'RESIDENT_ADVISOR') {
+        console.log('Processing RA data');
+        console.log('Ticket types:', processedData.tickets?.length || 0);
+        console.log('Individual tickets available:', processedData.individualTickets?.length || 0);
 
         // Create or find the event
         const eventDate = new Date(processedData.eventDate);
@@ -144,33 +156,32 @@ export async function POST(request: NextRequest) {
 
         // Save individual tickets with customer data
         if (processedData.individualTickets && processedData.individualTickets.length > 0) {
+          console.log('Processing', processedData.individualTickets.length, 'individual tickets');
           // Save individual ticket records with customer data
           for (const ticket of processedData.individualTickets) {
             try {
+              const normalizedTicket = normalizeTicketData(ticket, platform);
+
               await prisma.ticket.create({
                 data: {
                   eventId: event.id,
                   uploadId: upload.id,
-                  ticketType: ticket.ticketType,
-                  price: ticket.price,
-                  quantity: ticket.quantity || 1,
-                  sold: ticket.quantity || 1,
-                  revenue: ticket.price * (ticket.quantity || 1),
-                  purchaseDate: new Date(ticket.purchaseDate),
-                  // Store customer data in correct fields - handle both field name formats
-                  customerEmail: ticket.customerEmail || ticket.email,
-                  customerPostcode: ticket.customerPostcode || ticket.postcode,
-                  customerName: ticket.customerName || ticket.billingName,
-                  marketingOptIn: ticket.marketingOptIn || false,
-                  orderNumber: ticket.orderNumber,
-                  barcode: ticket.barcode,
+                  ticketType: normalizedTicket.ticketType,
+                  price: normalizedTicket.price,
+                  quantity: normalizedTicket.quantity,
+                  sold: normalizedTicket.quantity,
+                  revenue: normalizedTicket.price * normalizedTicket.quantity,
+                  purchaseDate: new Date(normalizedTicket.purchaseDate),
+                  // Store customer data with normalized field names
+                  customerEmail: normalizedTicket.customerEmail,
+                  customerPostcode: normalizedTicket.customerPostcode,
+                  customerName: normalizedTicket.customerName,
+                  marketingOptIn: normalizedTicket.marketingOptIn,
+                  orderNumber: normalizedTicket.orderNumber,
+                  barcode: normalizedTicket.barcode,
                   metadata: {
-                    customerEmail: ticket.customerEmail || ticket.email,
-                    customerName: ticket.customerName || ticket.billingName,
-                    customerPostcode: ticket.customerPostcode || ticket.postcode,
-                    marketingOptIn: ticket.marketingOptIn || false,
-                    orderNumber: ticket.orderNumber,
-                    barcode: ticket.barcode,
+                    status: normalizedTicket.status,
+                    discountCode: normalizedTicket.discountCode,
                     ...ticket.metadata
                   },
                 }
@@ -213,6 +224,85 @@ export async function POST(request: NextRequest) {
 
         eventsProcessed = 1;
 
+      } else if (platform === 'HUMANITIX') {
+        console.log('Processing Humanitix data');
+        console.log('Ticket types:', processedData.tickets?.length || 0);
+        console.log('Individual tickets available:', processedData.individualTickets?.length || 0);
+
+        // Create or find the event
+        const eventDate = new Date(processedData.eventDate);
+        const externalId = `HUM-${processedData.eventName}-${eventDate.toISOString().split('T')[0]}`;
+
+        let event = await prisma.event.findFirst({
+          where: {
+            organizationId: finalOrg.id,
+            platform: platform,
+            externalId,
+          }
+        });
+
+        if (!event) {
+          event = await prisma.event.create({
+            data: {
+              organizationId: finalOrg.id,
+              name: processedData.eventName || 'Unnamed Event',
+              date: eventDate,
+              venue: processedData.venue || 'TBA',
+              platform: platform,
+              externalId,
+              status: eventDate < new Date() ? 'COMPLETED' : 'UPCOMING',
+              metadata: {
+                totalAttendees: processedData.totalAttendees,
+                totalRevenue: processedData.totalRevenue,
+              },
+            }
+          });
+          console.log('Created Humanitix event:', event.id);
+        } else {
+          console.log('Found existing Humanitix event:', event.id);
+        }
+
+        // Save individual tickets with customer data
+        if (processedData.individualTickets && processedData.individualTickets.length > 0) {
+          console.log('Processing', processedData.individualTickets.length, 'individual Humanitix tickets');
+          for (const ticket of processedData.individualTickets) {
+            try {
+              const normalizedTicket = normalizeTicketData(ticket, platform);
+
+              await prisma.ticket.create({
+                data: {
+                  eventId: event.id,
+                  uploadId: upload.id,
+                  ticketType: normalizedTicket.ticketType,
+                  price: normalizedTicket.price,
+                  quantity: normalizedTicket.quantity,
+                  sold: normalizedTicket.quantity,
+                  revenue: normalizedTicket.price * normalizedTicket.quantity,
+                  purchaseDate: new Date(normalizedTicket.purchaseDate),
+                  customerEmail: normalizedTicket.customerEmail,
+                  customerPostcode: normalizedTicket.customerPostcode,
+                  customerName: normalizedTicket.customerName,
+                  marketingOptIn: normalizedTicket.marketingOptIn,
+                  orderNumber: normalizedTicket.orderNumber,
+                  barcode: normalizedTicket.barcode,
+                  metadata: {
+                    status: normalizedTicket.status,
+                    discountCode: normalizedTicket.discountCode,
+                    ...ticket.metadata
+                  },
+                }
+              });
+              recordsProcessed++;
+            } catch (err) {
+              console.error('Error saving Humanitix ticket:', err);
+              recordsFailed++;
+              errors.push(`Failed to save ticket: ${err}`);
+            }
+          }
+        }
+
+        eventsProcessed = 1;
+
       } else if (processedData.rawData) {
         // Handle raw data from other platforms
         console.log('Processing raw data with', processedData.totalRows || processedData.rawData.length, 'rows');
@@ -220,15 +310,20 @@ export async function POST(request: NextRequest) {
         errors.push('Platform parsing not yet implemented for ' + platform);
       }
 
-      // Update upload status
+      // Update upload status with better error handling
+      const uploadStatus = recordsProcessed > 0 ? 'COMPLETED' : 'FAILED';
+      const finalErrorLog = errors.length > 0
+        ? errors.join('\n')
+        : (recordsProcessed === 0 ? 'No records were processed. The CSV may be empty or in an incorrect format.' : null);
+
       await prisma.upload.update({
         where: { id: upload.id },
         data: {
-          status: recordsProcessed > 0 ? 'COMPLETED' : 'FAILED',
+          status: uploadStatus,
           recordsProcessed,
           recordsFailed,
           processedAt: new Date(),
-          errorLog: errors.length > 0 ? errors.join('\n') : null,
+          errorLog: finalErrorLog,
         }
       });
 
