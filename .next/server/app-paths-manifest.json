@@ -1,11 +1,4 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/api/customers/route": "app/api/customers/route.js",
-  "/api/events/route": "app/api/events/route.js",
-  "/api/uploads/route": "app/api/uploads/route.js",
-  "/api/dashboard/route": "app/api/dashboard/route.js",
-  "/events/page": "app/events/page.js",
-  "/page": "app/page.js",
-  "/upload/page": "app/upload/page.js",
-  "/uploads/page": "app/uploads/page.js"
+  "/api/cleanup/route": "app/api/cleanup/route.js",
+  "/api/dashboard/route": "app/api/dashboard/route.js"
 }

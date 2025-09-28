@@ -1,0 +1,4 @@
+Order id,Order date,Event,Event date,Status,First name,Last name,Email,Mobile,Postcode,Ticket sales,Valid tickets,Marketing opt-in,Discount code used
+HUM001,28/09/2025 10:30 am,Warehouse Rave,30/09/2025,Complete,Sarah,Jones,sarah@example.com,0412345678,2000,50.00,2,Yes,
+HUM002,28/09/2025 11:00 am,Warehouse Rave,30/09/2025,Complete,Mike,Brown,mike@example.com,0423456789,2010,25.00,1,No,EARLY10
+HUM003,28/09/2025 2:00 pm,Warehouse Rave,30/09/2025,Complete,Emma,Wilson,emma@example.com,0434567890,2020,75.00,3,Yes,

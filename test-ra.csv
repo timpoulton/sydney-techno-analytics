@@ -1,0 +1,6 @@
+Date purchased	Order number	Barcode	Email	Billing name	Ticket type	Price	Postcode
+2025-09-27 14:30	RA123456	BAR001	john@example.com	John Doe	Early Bird	25.00	2000
+2025-09-27 15:45	RA123457	BAR002	jane@example.com	Jane Smith	General Admission	35.00	2010
+2025-09-27 16:20	RA123458	BAR003	bob@example.com	Bob Wilson	VIP	50.00	2020
+2025-09-28 09:15	RA123459	BAR004	alice@example.com	Alice Brown	Early Bird	25.00	2030
+2025-09-28 10:30	RA123460	BAR005	charlie@example.com	Charlie Davis	General Admission	35.00	2040

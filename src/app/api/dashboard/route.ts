@@ -6,8 +6,14 @@ export async function GET() {
     const prismaModule = await import('@/lib/prisma');
     const prisma = prismaModule.default;
 
-    // Get total events
-    const totalEvents = await prisma.event.count();
+    // Get total events (only those with tickets)
+    const totalEvents = await prisma.event.count({
+      where: {
+        tickets: {
+          some: {} // Only count events that have at least one ticket
+        }
+      }
+    });
 
     // Get total revenue from tickets
     const ticketAggregates = await prisma.ticket.aggregate({
@@ -19,11 +25,14 @@ export async function GET() {
       }
     });
 
-    // Get upcoming events count
+    // Get upcoming events count (only those with tickets)
     const upcomingEvents = await prisma.event.count({
       where: {
         date: {
           gte: new Date()
+        },
+        tickets: {
+          some: {} // Only count events that have at least one ticket
         }
       }
     });
@@ -82,9 +91,14 @@ export async function GET() {
         return dateA.getTime() - dateB.getTime();
       });
 
-    // Get platform breakdown
+    // Get platform breakdown (only events with tickets)
     const platformCounts = await prisma.event.groupBy({
       by: ['platform'],
+      where: {
+        tickets: {
+          some: {} // Only count events that have at least one ticket
+        }
+      },
       _count: {
         id: true
       }
