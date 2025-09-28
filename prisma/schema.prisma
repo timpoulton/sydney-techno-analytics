@@ -104,22 +104,29 @@ enum UploadStatus {
 }
 
 model Ticket {
-  id            String   @id @default(uuid())
-  eventId       String
-  uploadId      String
-  ticketType    String
-  price         Decimal
-  quantity      Int
-  sold          Int
-  revenue       Decimal
-  purchaseDate  DateTime
-  buyerEmail    String?
-  buyerPostcode String?
-  metadata      Json?
-  createdAt     DateTime @default(now())
+  id               String   @id @default(uuid())
+  eventId          String
+  uploadId         String
+  ticketType       String
+  price            Decimal
+  quantity         Int
+  sold             Int
+  revenue          Decimal
+  purchaseDate     DateTime
+  customerEmail    String?
+  customerName     String?
+  customerPostcode String?
+  marketingOptIn   Boolean  @default(false)
+  orderNumber      String?
+  barcode          String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
 
   event  Event  @relation(fields: [eventId], references: [id])
   upload Upload @relation(fields: [uploadId], references: [id])
+
+  @@index([customerEmail])
+  @@index([customerPostcode])
 }
 
 model Artist {

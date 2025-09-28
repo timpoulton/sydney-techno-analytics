@@ -142,30 +142,63 @@ export async function POST(request: NextRequest) {
           console.log('Found existing event:', event.id);
         }
 
-        // Save consolidated tickets
-        for (const ticketGroup of processedData.tickets) {
-          try {
-            await prisma.ticket.create({
-              data: {
-                eventId: event.id,
-                uploadId: upload.id,
-                ticketType: ticketGroup.ticketType,
-                price: ticketGroup.price,
-                quantity: ticketGroup.quantity,
-                sold: ticketGroup.sold,
-                revenue: ticketGroup.totalRevenue,
-                purchaseDate: eventDate,
-                metadata: {
-                  averagePrice: ticketGroup.price,
-                  totalForType: ticketGroup.totalRevenue
-                },
-              }
-            });
-            recordsProcessed += ticketGroup.quantity;
-          } catch (err) {
-            console.error('Error saving ticket group:', err);
-            recordsFailed++;
-            errors.push(`Failed to save ${ticketGroup.ticketType}: ${err}`);
+        // Save individual tickets with customer data
+        if (processedData.individualTickets && processedData.individualTickets.length > 0) {
+          // Save individual ticket records with customer data
+          for (const ticket of processedData.individualTickets) {
+            try {
+              await prisma.ticket.create({
+                data: {
+                  eventId: event.id,
+                  uploadId: upload.id,
+                  ticketType: ticket.ticketType,
+                  price: ticket.price,
+                  quantity: ticket.quantity || 1,
+                  sold: ticket.quantity || 1,
+                  revenue: ticket.price * (ticket.quantity || 1),
+                  purchaseDate: new Date(ticket.purchaseDate),
+                  customerEmail: ticket.email,
+                  customerName: ticket.billingName,
+                  customerPostcode: ticket.postcode,
+                  marketingOptIn: ticket.marketingOptIn || false,
+                  orderNumber: ticket.orderNumber,
+                  barcode: ticket.barcode,
+                  metadata: ticket.metadata || {},
+                }
+              });
+              recordsProcessed++;
+            } catch (err) {
+              console.error('Error saving ticket:', err);
+              recordsFailed++;
+              errors.push(`Failed to save ticket: ${err}`);
+            }
+          }
+        } else {
+          // Fallback to consolidated tickets for backward compatibility
+          for (const ticketGroup of processedData.tickets) {
+            try {
+              await prisma.ticket.create({
+                data: {
+                  eventId: event.id,
+                  uploadId: upload.id,
+                  ticketType: ticketGroup.ticketType,
+                  price: ticketGroup.price,
+                  quantity: ticketGroup.quantity,
+                  sold: ticketGroup.sold,
+                  revenue: ticketGroup.totalRevenue,
+                  purchaseDate: eventDate,
+                  metadata: {
+                    averagePrice: ticketGroup.price,
+                    totalForType: ticketGroup.totalRevenue
+                  },
+                }
+              });
+              recordsProcessed += ticketGroup.quantity;
+            } catch (err) {
+              console.error('Error saving ticket group:', err);
+              recordsFailed++;
+              errors.push(`Failed to save ${ticketGroup.ticketType}: ${err}`);
+            }
           }
         }
 
@@ -272,6 +305,67 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching uploads:', error);
     return NextResponse.json(
       { error: 'Failed to fetch uploads' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    // Check if database is configured
+    if (!process.env.DATABASE_URL) {
+      return NextResponse.json(
+        { error: 'Database not configured' },
+        { status: 503 }
+      );
+    }
+
+    // Get upload ID from query params
+    const { searchParams } = new URL(request.url);
+    const uploadId = searchParams.get('id');
+
+    if (!uploadId) {
+      return NextResponse.json(
+        { error: 'Upload ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Lazy load Prisma
+    const prismaModule = await import('@/lib/prisma');
+    const prisma = prismaModule.default;
+
+    // First, delete all tickets associated with this upload
+    await prisma.ticket.deleteMany({
+      where: { uploadId }
+    });
+
+    // Then delete the upload record
+    const deletedUpload = await prisma.upload.delete({
+      where: { id: uploadId }
+    });
+
+    // Check if we should also delete the event (if no tickets remain)
+    const remainingTickets = await prisma.ticket.count({
+      where: { eventId: deletedUpload.eventId }
+    });
+
+    if (remainingTickets === 0 && deletedUpload.eventId) {
+      // Delete the event if no tickets remain
+      await prisma.event.delete({
+        where: { id: deletedUpload.eventId }
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Upload and associated data deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting upload:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete upload' },
       { status: 500 }
     );
   }

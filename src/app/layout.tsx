@@ -49,6 +49,9 @@ export default function RootLayout({
                   <NavLink href="/upload" icon="upload">
                     Upload
                   </NavLink>
+                  <NavLink href="/uploads" icon="database">
+                    Uploads
+                  </NavLink>
                 </div>
               </div>
 
@@ -84,6 +87,9 @@ export default function RootLayout({
                         </MobileNavLink>
                         <MobileNavLink href="/upload" icon="upload">
                           Upload CSV
+                        </MobileNavLink>
+                        <MobileNavLink href="/uploads" icon="database">
+                          Manage Uploads
                         </MobileNavLink>
                       </div>
                     </div>

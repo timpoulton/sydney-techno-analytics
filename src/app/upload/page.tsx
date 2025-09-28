@@ -187,11 +187,25 @@ export default function UploadPage() {
       });
     }
 
+    // Flatten all individual tickets for customer data capture
+    const individualTickets: any[] = [];
+    for (const [type, tickets] of ticketGroups.entries()) {
+      tickets.forEach((ticket: any) => {
+        individualTickets.push({
+          ...ticket,
+          ticketType: type,
+          quantity: 1,
+          marketingOptIn: ticket.marketingOptIn === 'Yes' || ticket.marketingOptIn === true
+        });
+      });
+    }
+
     return {
       eventName,
       eventDate: earliestDate?.toISOString() || new Date().toISOString(),
       venue: 'Sydney', // Default venue
       tickets: consolidatedTickets,
+      individualTickets, // Include individual ticket data
       totalAttendees: data.length,
       totalRevenue,
       dateRange: {
