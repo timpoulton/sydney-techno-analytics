@@ -81,9 +81,10 @@ export default function UploadPage() {
       return 'RESIDENT_ADVISOR';
     }
 
-    // Humanitix detection
+    // Humanitix detection - check for specific columns
     if (headers.some(h => h.toLowerCase().includes('humanitix')) ||
-        headers.some(h => h === 'Ticket Holder Name')) {
+        headers.includes('Order id') && headers.includes('Valid tickets') ||
+        headers.includes('Event') && headers.includes('Your earnings')) {
       console.log('Detected as Humanitix format');
       return 'HUMANITIX';
     }
@@ -216,6 +217,134 @@ export default function UploadPage() {
     };
   };
 
+  const processHumanitixData = (data: ParsedRow[]) => {
+    if (!data || data.length === 0) return null;
+
+    // Extract event info from first row
+    const firstRow = data[0];
+    const eventName = firstRow['Event'] || 'Unknown Event';
+    const eventDateStr = firstRow['Event date'] || '';
+
+    // Parse event date (format: DD/MM/YYYY)
+    let eventDate = new Date();
+    if (eventDateStr) {
+      const [day, month, year] = eventDateStr.split('/');
+      eventDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    }
+
+    // Group tickets and capture customer data
+    const ticketGroups = new Map<string, any[]>();
+    const individualTickets: any[] = [];
+
+    data.forEach((row) => {
+      try {
+        // Parse ticket sales amount
+        const ticketSalesStr = row['Ticket sales'] || '0';
+        const ticketSales = parseFloat(ticketSalesStr.replace(/[^0-9.-]/g, ''));
+
+        // Parse valid tickets count
+        const validTickets = parseInt(row['Valid tickets'] || '0');
+
+        if (validTickets === 0) return; // Skip cancelled orders
+
+        // Calculate price per ticket
+        const pricePerTicket = validTickets > 0 ? ticketSales / validTickets : ticketSales;
+
+        // Create ticket type based on price
+        const ticketType = pricePerTicket > 0 ? `$${pricePerTicket.toFixed(2)} Ticket` : 'Free Ticket';
+
+        if (!ticketGroups.has(ticketType)) {
+          ticketGroups.set(ticketType, []);
+        }
+
+        // Parse order date (format: DD/MM/YYYY H:MM am/pm)
+        let orderDate = new Date();
+        const orderDateStr = row['Order date'] || '';
+        if (orderDateStr) {
+          const parts = orderDateStr.split(' ');
+          if (parts.length >= 2) {
+            const [day, month, year] = parts[0].split('/');
+            const time = parts[1];
+            const ampm = parts[2] || '';
+
+            const [hours, minutes] = time.split(':');
+            let hour = parseInt(hours);
+
+            if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12;
+            if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0;
+
+            orderDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.toString().padStart(2, '0')}:${minutes}:00`);
+          }
+        }
+
+        // Create individual tickets with customer data
+        for (let i = 0; i < validTickets; i++) {
+          individualTickets.push({
+            ticketType,
+            price: pricePerTicket,
+            quantity: 1,
+            email: row['Email'] || '',
+            billingName: `${row['First name'] || ''} ${row['Last name'] || ''}`.trim(),
+            customerName: `${row['First name'] || ''} ${row['Last name'] || ''}`.trim(),
+            customerEmail: row['Email'] || '',
+            customerPhone: row['Mobile'] || '',
+            marketingOptIn: row['Marketing opt-in'] === 'Yes',
+            orderNumber: row['Order id'] || '',
+            barcode: `${row['Order id'] || 'UNKNOWN'}-${i + 1}`,
+            purchaseDate: orderDate.toISOString(),
+            discountCode: row['Discount code used'] || '',
+            status: row['Status'] || '',
+          });
+        }
+
+        ticketGroups.get(ticketType)?.push({
+          price: pricePerTicket,
+          quantity: validTickets
+        });
+      } catch (err) {
+        console.error('Error processing Humanitix row:', err, row);
+      }
+    });
+
+    // Calculate consolidated tickets
+    const consolidatedTickets: any[] = [];
+    let totalRevenue = 0;
+    let totalAttendees = 0;
+
+    for (const [type, tickets] of ticketGroups.entries()) {
+      const totalQuantity = tickets.reduce((sum, t) => sum + t.quantity, 0);
+      const totalAmount = tickets.reduce((sum, t) => sum + t.price * t.quantity, 0);
+      const avgPrice = totalQuantity > 0 ? totalAmount / totalQuantity : 0;
+
+      consolidatedTickets.push({
+        ticketType: type,
+        price: avgPrice,
+        quantity: totalQuantity,
+        sold: totalQuantity,
+        totalRevenue: totalAmount
+      });
+
+      totalRevenue += totalAmount;
+      totalAttendees += totalQuantity;
+    }
+
+    // Extract venue from event name
+    let venue = 'Sydney';
+    if (eventName.includes('BYO Warehouse')) venue = 'BYO Warehouse';
+    if (eventName.includes('Warehouse')) venue = 'Warehouse';
+
+    return {
+      eventName,
+      eventDate: eventDate.toISOString(),
+      venue,
+      tickets: consolidatedTickets,
+      individualTickets,
+      totalAttendees,
+      totalRevenue,
+      platform: 'HUMANITIX'
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!parsedData || parsedData.length === 0) {
@@ -231,6 +360,8 @@ export default function UploadPage() {
       let processedData;
       if (platform === 'RESIDENT_ADVISOR') {
         processedData = processResidentAdvisorData(parsedData);
+      } else if (platform === 'HUMANITIX') {
+        processedData = processHumanitixData(parsedData);
       } else {
         // For other platforms, send raw data for now
         processedData = {
