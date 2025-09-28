@@ -16,9 +16,9 @@ export async function GET() {
     });
 
     // Calculate aggregated data for each event
-    const eventsWithMetrics = events.map(event => {
-      const ticketsSold = event.tickets.reduce((sum, ticket) => sum + (ticket.sold || 0), 0);
-      const totalRevenue = event.tickets.reduce((sum, ticket) => sum + Number(ticket.revenue || 0), 0);
+    const eventsWithMetrics = events.map((event: any) => {
+      const ticketsSold = event.tickets.reduce((sum: number, ticket: any) => sum + (ticket.sold || 0), 0);
+      const totalRevenue = event.tickets.reduce((sum: number, ticket: any) => sum + Number(ticket.revenue || 0), 0);
 
       return {
         id: event.id,
