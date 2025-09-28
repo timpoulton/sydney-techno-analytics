@@ -2,406 +2,403 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import Papa from 'papaparse';
+
+type Platform = 'RESIDENT_ADVISOR' | 'HUMANITIX' | 'MOSHTIX';
+
+interface ParsedRow {
+  [key: string]: string;
+}
 
 export default function UploadPage() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
-  const [platform, setPlatform] = useState('');
+  const [platform, setPlatform] = useState<Platform>('RESIDENT_ADVISOR');
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [parseProgress, setParseProgress] = useState(0);
+  const [parsedData, setParsedData] = useState<ParsedRow[] | null>(null);
   const [uploadResult, setUploadResult] = useState<any>(null);
-  const [error, setError] = useState('');
-  const [dragActive, setDragActive] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setError('');
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      setError(null);
+      setParsedData(null);
+      setParseProgress(0);
       setUploadResult(null);
+
+      // Parse the file immediately on selection
+      parseCSV(selectedFile);
     }
   };
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
+  const parseCSV = (fileToParser: File) => {
+    Papa.parse(fileToParser, {
+      header: true,
+      delimiter: '', // Auto-detect delimiter (will handle tabs and commas)
+      skipEmptyLines: true,
+      complete: (results) => {
+        console.log('Parse complete. Rows:', results.data.length);
+        console.log('Headers:', results.meta.fields);
+        console.log('Delimiter detected:', results.meta.delimiter);
+        console.log('Sample data (first 3 rows):', results.data.slice(0, 3));
+
+        if (results.errors.length > 0) {
+          console.error('Parse errors:', results.errors);
+          // Only show critical errors
+          const criticalErrors = results.errors.filter(e => e.type === 'FieldMismatch');
+          if (criticalErrors.length > 0) {
+            setError(`Parse warnings: ${criticalErrors.length} rows have field mismatches`);
+          }
+        }
+
+        setParsedData(results.data as ParsedRow[]);
+        setParseProgress(100);
+
+        // Auto-detect platform
+        const detectedPlatform = detectPlatformFromData(results.data as ParsedRow[]);
+        setPlatform(detectedPlatform);
+      },
+      error: (error) => {
+        console.error('Parse error:', error);
+        setError(`Failed to parse CSV: ${error.message}`);
+      }
+    });
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
+  const detectPlatformFromData = (data: ParsedRow[]): Platform => {
+    if (!data || data.length === 0) return platform;
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.type === 'text/csv' || droppedFile.name.endsWith('.csv')) {
-        setFile(droppedFile);
-        setError('');
-        setUploadResult(null);
-      } else {
-        setError('Please upload a CSV file');
+    const headers = Object.keys(data[0]);
+    console.log('Detecting platform from headers:', headers);
+
+    // Resident Advisor detection - check for specific columns
+    if (headers.some(h => h === 'Barcode' || h === 'Order number') ||
+        (headers.includes('Date purchased') && headers.includes('Ticket type'))) {
+      console.log('Detected as Resident Advisor format');
+      return 'RESIDENT_ADVISOR';
+    }
+
+    // Humanitix detection
+    if (headers.some(h => h.toLowerCase().includes('humanitix')) ||
+        headers.some(h => h === 'Ticket Holder Name')) {
+      console.log('Detected as Humanitix format');
+      return 'HUMANITIX';
+    }
+
+    // Moshtix detection
+    if (headers.some(h => h.toLowerCase().includes('moshtix')) ||
+        headers.some(h => h === 'Transaction ID')) {
+      console.log('Detected as Moshtix format');
+      return 'MOSHTIX';
+    }
+
+    return platform;
+  };
+
+  const processResidentAdvisorData = (data: ParsedRow[]) => {
+    // Group tickets by type
+    const ticketGroups = new Map<string, any[]>();
+    let eventName = 'Event from RA Import';
+    let earliestDate: Date | null = null;
+    let latestDate: Date | null = null;
+
+    // Extract event name from filename if possible
+    if (file?.name) {
+      const match = file.name.match(/\d{8}-(.*?)-/);
+      if (match) {
+        eventName = match[1].replace(/_/g, ' ');
       }
     }
+
+    data.forEach((row, index) => {
+      try {
+        const ticketType = row['Ticket type'] || 'General Admission';
+        const priceStr = row['Price'] || '0';
+        const price = parseFloat(priceStr.replace(/[^0-9.-]/g, ''));
+        const email = row['Email'] || '';
+        const postcode = row['Postcode'] || row['Shipping Postcode'] || '';
+
+        // Parse date
+        let purchaseDate: Date;
+        const dateStr = row['Date purchased'];
+        if (dateStr) {
+          // Handle "YYYY-MM-DD H:MM" or "YYYY-MM-DD HH:MM" format
+          const cleanDate = dateStr.trim();
+          purchaseDate = new Date(cleanDate);
+          if (isNaN(purchaseDate.getTime())) {
+            // Try adding seconds if missing
+            purchaseDate = new Date(cleanDate + ':00');
+          }
+        } else {
+          purchaseDate = new Date();
+        }
+
+        // Track date range
+        if (!earliestDate || purchaseDate < earliestDate) {
+          earliestDate = purchaseDate;
+        }
+        if (!latestDate || purchaseDate > latestDate) {
+          latestDate = purchaseDate;
+        }
+
+        if (!ticketGroups.has(ticketType)) {
+          ticketGroups.set(ticketType, []);
+        }
+
+        ticketGroups.get(ticketType)?.push({
+          price,
+          email,
+          postcode,
+          purchaseDate: purchaseDate.toISOString(),
+          billingName: row['Billing name'],
+          orderNumber: row['Order number'],
+          barcode: row['Barcode']
+        });
+      } catch (err) {
+        console.error(`Error processing row ${index + 1}:`, err, row);
+      }
+    });
+
+    // Consolidate tickets by type
+    const consolidatedTickets: any[] = [];
+    let totalRevenue = 0;
+
+    for (const [type, tickets] of ticketGroups.entries()) {
+      const avgPrice = tickets.reduce((sum, t) => sum + t.price, 0) / tickets.length;
+      const typeRevenue = avgPrice * tickets.length;
+      totalRevenue += typeRevenue;
+
+      consolidatedTickets.push({
+        ticketType: type,
+        price: avgPrice,
+        quantity: tickets.length,
+        sold: tickets.length,
+        totalRevenue: typeRevenue,
+        sampleData: tickets.slice(0, 5) // Keep sample for debugging
+      });
+    }
+
+    return {
+      eventName,
+      eventDate: earliestDate?.toISOString() || new Date().toISOString(),
+      venue: 'Sydney', // Default venue
+      tickets: consolidatedTickets,
+      totalAttendees: data.length,
+      totalRevenue,
+      dateRange: {
+        start: earliestDate?.toISOString(),
+        end: latestDate?.toISOString()
+      },
+      platform: 'RESIDENT_ADVISOR'
+    };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!file || !platform) {
-      setError('Please select a file and platform');
+    if (!parsedData || parsedData.length === 0) {
+      setError('No data to upload. Please select a valid CSV file.');
       return;
     }
 
     setUploading(true);
-    setError('');
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('platform', platform);
+    setError(null);
 
     try {
-      const response = await fetch('/api/uploads', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Upload failed');
+      // Process data based on platform
+      let processedData;
+      if (platform === 'RESIDENT_ADVISOR') {
+        processedData = processResidentAdvisorData(parsedData);
+      } else {
+        // For other platforms, send raw data for now
+        processedData = {
+          platform,
+          rawData: parsedData.slice(0, 100), // Limit to first 100 rows for safety
+          totalRows: parsedData.length
+        };
       }
 
-      setUploadResult(data);
+      console.log('Sending processed data to API:', {
+        ...processedData,
+        tickets: processedData.tickets?.map((t: any) => ({
+          ...t,
+          sampleData: undefined // Remove sample data from logs
+        }))
+      });
 
-      // Redirect to dashboard after successful upload
+      // Send processed data to API
+      const response = await fetch('/api/uploads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          platform,
+          fileName: file?.name || 'upload.csv',
+          processedData
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || result.details || 'Upload failed');
+      }
+
+      console.log('Upload successful:', result);
+      setUploadResult(result);
+
+      // Redirect after 2 seconds
       setTimeout(() => {
-        router.push('/');
-      }, 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to upload file');
+        router.push('/events');
+      }, 2000);
+    } catch (err) {
+      console.error('Upload error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to upload file');
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <div className="container mx-auto p-8 max-w-5xl animate-in">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-white mb-2">
-          Upload Data
-        </h1>
-        <p className="text-white/60">
-          Import event data from your ticketing platforms
-        </p>
-      </div>
+    <div className="min-h-screen bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-gray-800 shadow-xl rounded-lg border border-gray-700">
+          <div className="px-6 py-8">
+            <h1 className="text-3xl font-bold text-white mb-8">Upload Event Data</h1>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Main Upload Form */}
-        <div className="lg:col-span-2">
-          <Card className="apple-card border-white/5">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-white">
-                CSV File Upload
-              </CardTitle>
-              <CardDescription className="text-white/60">
-                Select your platform and upload the exported CSV file
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Platform Selection */}
-                <div>
-                  <label className="text-sm font-medium mb-2 block text-white/80">
-                    Platform
-                  </label>
-                  <Select value={platform} onValueChange={setPlatform} disabled={uploading}>
-                    <SelectTrigger
-                      className="w-full bg-white/5 border-white/10 text-white hover:bg-white/10 transition-colors"
-                    >
-                      <SelectValue placeholder="Select platform..." />
-                    </SelectTrigger>
-                    <SelectContent className="bg-system-gray-800 border-white/10">
-                      <SelectItem value="HUMANITIX">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-system-blue" />
-                          Humanitix
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="RESIDENT_ADVISOR">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-system-green" />
-                          Resident Advisor
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="MOSHTIX">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-system-purple" />
-                          Moshtix
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* File Upload Area */}
-                <div>
-                  <label className="text-sm font-medium mb-2 block text-white/80">
-                    File Upload
-                  </label>
-                  <div
-                    className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all ${
-                      dragActive
-                        ? 'border-primary bg-primary/5'
-                        : 'border-white/10 hover:border-white/20 bg-white/[0.02]'
-                    }`}
-                    onDragEnter={handleDrag}
-                    onDragLeave={handleDrag}
-                    onDragOver={handleDrag}
-                    onDrop={handleDrop}
-                  >
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleFileChange}
-                      disabled={uploading}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-
-                    <div className="flex flex-col items-center">
-                      <div className="mb-4">
-                        <div className={`w-16 h-16 rounded-2xl ${file ? 'bg-primary/10' : 'bg-white/5'} flex items-center justify-center transition-colors`}>
-                          <svg
-                            className={`w-8 h-8 ${file ? 'text-primary' : 'text-white/40'}`}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={1.5}
-                              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                            />
-                          </svg>
-                        </div>
-                      </div>
-
-                      {file ? (
-                        <div className="space-y-2">
-                          <p className="text-base font-medium text-white">
-                            {file.name}
-                          </p>
-                          <p className="text-sm text-white/40">
-                            {(file.size / 1024).toFixed(2)} KB
-                          </p>
-                          <Badge className="bg-system-green/10 text-system-green border-0">
-                            Ready to upload
-                          </Badge>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <p className="text-base font-medium text-white/80">
-                            Drop your CSV file here
-                          </p>
-                          <p className="text-sm text-white/40">
-                            or click to browse
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Error Display */}
-                {error && (
-                  <div className="p-4 rounded-lg bg-system-red/10 border border-system-red/20">
-                    <p className="text-sm text-system-red flex items-center gap-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {error}
-                    </p>
-                  </div>
-                )}
-
-                {/* Success Display */}
-                {uploadResult && (
-                  <div className="p-4 rounded-lg bg-system-green/10 border border-system-green/20 animate-in">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5">
-                        <div className="h-5 w-5 rounded-full bg-system-green/20 flex items-center justify-center">
-                          <svg className="w-3 h-3 text-system-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-system-green mb-2">
-                          Upload Successful
-                        </h3>
-                        <div className="space-y-1 text-sm">
-                          <p className="text-white/60">
-                            Events processed: <span className="font-mono text-white">{uploadResult.eventsProcessed}</span>
-                          </p>
-                          <p className="text-white/60">
-                            Records processed: <span className="font-mono text-white">{uploadResult.recordsProcessed}</span>
-                          </p>
-                          {uploadResult.recordsFailed > 0 && (
-                            <p className="text-white/60">
-                              Records failed: <span className="font-mono text-system-red">{uploadResult.recordsFailed}</span>
-                            </p>
-                          )}
-                        </div>
-                        <p className="mt-3 text-xs text-white/40">
-                          Redirecting to dashboard...
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Submit Button */}
-                <Button
-                  type="submit"
-                  disabled={!file || !platform || uploading}
-                  className={`w-full h-12 text-base font-medium transition-all ${
-                    !file || !platform || uploading
-                      ? 'bg-white/10 text-white/40 cursor-not-allowed'
-                      : 'bg-primary text-white hover:bg-primary/90'
-                  }`}
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Platform Selection (auto-detected) */}
+              <div>
+                <label htmlFor="platform" className="block text-sm font-medium text-gray-300">
+                  Platform (Auto-detected)
+                </label>
+                <select
+                  id="platform"
+                  value={platform}
+                  onChange={(e) => setPlatform(e.target.value as Platform)}
+                  className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  disabled={uploading}
                 >
-                  {uploading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Processing...
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      Upload File
-                    </div>
-                  )}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+                  <option value="RESIDENT_ADVISOR">Resident Advisor</option>
+                  <option value="HUMANITIX">Humanitix</option>
+                  <option value="MOSHTIX">Moshtix</option>
+                </select>
+                <p className="mt-1 text-sm text-gray-400">
+                  Platform is automatically detected from CSV headers
+                </p>
+              </div>
 
-        {/* Sidebar Information */}
-        <div className="lg:col-span-1 space-y-6">
-          {/* Platform Status */}
-          <Card className="apple-card border-white/5">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-white">
-                Platform Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white/60">Humanitix</span>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-system-green animate-pulse" />
-                  <span className="text-xs text-system-green">Active</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white/60">Resident Advisor</span>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-system-green animate-pulse" />
-                  <span className="text-xs text-system-green">Active</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white/60">Moshtix</span>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-system-green animate-pulse" />
-                  <span className="text-xs text-system-green">Active</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Format Guide */}
-          <Card className="apple-card border-white/5">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-white">
-                CSV Format
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
+              {/* File Upload */}
               <div>
-                <h4 className="font-medium text-white/80 mb-1">Humanitix</h4>
-                <code className="text-xs text-white/40 font-mono block bg-white/5 p-2 rounded">
-                  Event, Date, Venue, Type, Price, Qty
-                </code>
+                <label htmlFor="file" className="block text-sm font-medium text-gray-300">
+                  CSV File
+                </label>
+                <input
+                  type="file"
+                  id="file"
+                  accept=".csv,text/csv"
+                  onChange={handleFileChange}
+                  className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm text-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  disabled={uploading}
+                />
+                <p className="mt-1 text-sm text-gray-400">
+                  Supports tab-separated and comma-separated CSV files
+                </p>
               </div>
 
-              <div>
-                <h4 className="font-medium text-white/80 mb-1">Resident Advisor</h4>
-                <code className="text-xs text-white/40 font-mono block bg-white/5 p-2 rounded">
-                  Event, Date, Venue, Sold, Revenue
-                </code>
-              </div>
+              {/* Parse Progress */}
+              {file && parseProgress > 0 && parseProgress < 100 && (
+                <div className="bg-blue-900/20 rounded-lg p-4 border border-blue-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-blue-400">
+                      Parsing CSV...
+                    </span>
+                    <span className="text-sm text-blue-400">
+                      {parseProgress}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-900/30 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${parseProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
-              <div>
-                <h4 className="font-medium text-white/80 mb-1">Moshtix</h4>
-                <code className="text-xs text-white/40 font-mono block bg-white/5 p-2 rounded">
-                  Title, Date, Venue, Type, Qty, Price
-                </code>
-              </div>
-            </CardContent>
-          </Card>
+              {/* Parsed Data Summary */}
+              {parsedData && (
+                <div className="bg-green-900/20 rounded-lg p-4 border border-green-800">
+                  <h3 className="text-sm font-medium text-green-400 mb-2">
+                    CSV Parsed Successfully
+                  </h3>
+                  <ul className="text-sm text-green-300 space-y-1">
+                    <li>✓ Rows: {parsedData.length}</li>
+                    <li>✓ Columns: {Object.keys(parsedData[0] || {}).length}</li>
+                    <li>✓ Platform: {platform.replace(/_/g, ' ')}</li>
+                    {platform === 'RESIDENT_ADVISOR' && (
+                      <li>✓ Ticket types detected: {
+                        [...new Set(parsedData.map(r => r['Ticket type'] || 'General'))].length
+                      }</li>
+                    )}
+                  </ul>
+                </div>
+              )}
 
-          {/* Guidelines */}
-          <Card className="apple-card border-white/5">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-white">
-                Guidelines
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex gap-2">
-                <svg className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <p className="text-xs text-white/60">Export directly from platform admin</p>
-              </div>
-              <div className="flex gap-2">
-                <svg className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <p className="text-xs text-white/60">Use YYYY-MM-DD date format</p>
-              </div>
-              <div className="flex gap-2">
-                <svg className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <p className="text-xs text-white/60">Maximum file size: 10MB</p>
-              </div>
-              <div className="flex gap-2">
-                <svg className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <p className="text-xs text-white/60">Keep column headers in first row</p>
-              </div>
-            </CardContent>
-          </Card>
+              {/* Upload Result */}
+              {uploadResult && (
+                <div className="bg-green-900/20 rounded-lg p-4 border border-green-800">
+                  <h3 className="text-sm font-medium text-green-400 mb-2">
+                    Upload Successful!
+                  </h3>
+                  <ul className="text-sm text-green-300 space-y-1">
+                    <li>✓ Events processed: {uploadResult.eventsProcessed || 1}</li>
+                    <li>✓ Records processed: {uploadResult.recordsProcessed || parsedData?.length}</li>
+                    {uploadResult.recordsFailed > 0 && (
+                      <li>⚠ Records failed: {uploadResult.recordsFailed}</li>
+                    )}
+                  </ul>
+                  <p className="mt-2 text-sm text-gray-400">
+                    Redirecting to events page...
+                  </p>
+                </div>
+              )}
+
+              {/* Error Display */}
+              {error && (
+                <div className="bg-red-900/20 rounded-lg p-4 border border-red-800">
+                  <p className="text-sm text-red-400">⚠ {error}</p>
+                  <p className="text-xs text-red-400 mt-2">
+                    Check browser console for details
+                  </p>
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={!parsedData || uploading}
+                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              >
+                {uploading ? 'Processing Upload...' : 'Upload and Process'}
+              </button>
+            </form>
+
+            {/* Debug Info */}
+            {parsedData && (
+              <details className="mt-6">
+                <summary className="cursor-pointer text-sm text-gray-400 hover:text-gray-300">
+                  Debug: View sample data (first 3 rows)
+                </summary>
+                <pre className="mt-2 text-xs bg-gray-900 p-3 rounded overflow-auto max-h-64 text-gray-300">
+                  {JSON.stringify(parsedData.slice(0, 3), null, 2)}
+                </pre>
+              </details>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient, Platform } from '@prisma/client';
-import { ParserFactory } from '@/lib/parsers/parser-factory';
 
 const prisma = new PrismaClient();
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const platform = formData.get('platform') as string;
+    console.log('Upload API called');
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    // Parse JSON body instead of FormData
+    const body = await request.json();
+    const { platform, fileName, processedData } = body;
+
+    console.log('Received data:', {
+      platform,
+      fileName,
+      hasProcessedData: !!processedData,
+      dataKeys: processedData ? Object.keys(processedData) : []
+    });
+
+    if (!processedData) {
+      return NextResponse.json({ error: 'No data provided' }, { status: 400 });
     }
 
     if (!platform || !Object.values(Platform).includes(platform as Platform)) {
@@ -21,110 +29,191 @@ export async function POST(request: NextRequest) {
     // Get the organization (using the first one for now)
     const organization = await prisma.organization.findFirst();
     if (!organization) {
-      return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
+      // Create a default organization if none exists
+      const newOrg = await prisma.organization.create({
+        data: {
+          name: 'Sydney Techno Promoters',
+        }
+      });
+      console.log('Created organization:', newOrg);
     }
 
-    // For now, use the first user as the uploader
-    const user = await prisma.user.findFirst({
-      where: { organizationId: organization.id }
+    const finalOrg = organization || await prisma.organization.findFirst();
+    if (!finalOrg) {
+      return NextResponse.json({ error: 'Could not create organization' }, { status: 500 });
+    }
+
+    // Get or create a user
+    let user = await prisma.user.findFirst({
+      where: { organizationId: finalOrg.id }
     });
+
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      user = await prisma.user.create({
+        data: {
+          email: 'admin@sydneytechno.com',
+          name: 'Admin',
+          organizationId: finalOrg.id,
+        }
+      });
+      console.log('Created user:', user);
     }
 
     // Create upload record
     const upload = await prisma.upload.create({
       data: {
-        organizationId: organization.id,
+        organizationId: finalOrg.id,
         userId: user.id,
-        filename: file.name,
-        fileSize: file.size,
+        filename: fileName || 'upload.csv',
+        fileSize: 0, // We don't have the actual file size anymore
         platform: platform as Platform,
         status: 'PROCESSING',
       }
     });
 
-    // Read file content
-    const csvContent = await file.text();
+    console.log('Created upload record:', upload.id);
 
-    // Parse CSV
-    const parser = ParserFactory.getParser(platform as Platform);
-    const parseResult = await parser.parse(csvContent);
+    let eventsProcessed = 0;
+    let recordsProcessed = 0;
+    let recordsFailed = 0;
+    const errors: string[] = [];
 
-    // Save events and tickets to database
-    for (const parsedEvent of parseResult.events) {
-      // Check if event already exists
-      const existingEvent = await prisma.event.findFirst({
-        where: {
-          organizationId: organization.id,
-          platform: parsedEvent.platform,
-          externalId: parsedEvent.externalId,
+    try {
+      // Handle pre-processed Resident Advisor data
+      if (platform === 'RESIDENT_ADVISOR' && processedData.tickets) {
+        console.log('Processing RA data with', processedData.tickets.length, 'ticket types');
+
+        // Create or find the event
+        const eventDate = new Date(processedData.eventDate);
+        const externalId = `RA-${processedData.eventName}-${eventDate.toISOString().split('T')[0]}`;
+
+        let event = await prisma.event.findFirst({
+          where: {
+            organizationId: finalOrg.id,
+            platform: Platform.RESIDENT_ADVISOR,
+            externalId,
+          }
+        });
+
+        if (!event) {
+          event = await prisma.event.create({
+            data: {
+              organizationId: finalOrg.id,
+              name: processedData.eventName || 'Unnamed Event',
+              date: eventDate,
+              venue: processedData.venue || 'TBA',
+              platform: Platform.RESIDENT_ADVISOR,
+              externalId,
+              status: eventDate < new Date() ? 'COMPLETED' : 'UPCOMING',
+              metadata: {
+                totalAttendees: processedData.totalAttendees,
+                totalRevenue: processedData.totalRevenue,
+                dateRange: processedData.dateRange
+              },
+            }
+          });
+          console.log('Created event:', event.id);
+        } else {
+          console.log('Found existing event:', event.id);
+        }
+
+        // Save consolidated tickets
+        for (const ticketGroup of processedData.tickets) {
+          try {
+            await prisma.ticket.create({
+              data: {
+                eventId: event.id,
+                uploadId: upload.id,
+                ticketType: ticketGroup.ticketType,
+                price: ticketGroup.price,
+                quantity: ticketGroup.quantity,
+                sold: ticketGroup.sold,
+                revenue: ticketGroup.totalRevenue,
+                purchaseDate: eventDate,
+                metadata: {
+                  averagePrice: ticketGroup.price,
+                  totalForType: ticketGroup.totalRevenue
+                },
+              }
+            });
+            recordsProcessed += ticketGroup.quantity;
+          } catch (err) {
+            console.error('Error saving ticket group:', err);
+            recordsFailed++;
+            errors.push(`Failed to save ${ticketGroup.ticketType}: ${err}`);
+          }
+        }
+
+        eventsProcessed = 1;
+
+      } else if (processedData.rawData) {
+        // Handle raw data from other platforms
+        console.log('Processing raw data with', processedData.totalRows || processedData.rawData.length, 'rows');
+
+        // For now, just count the records
+        recordsProcessed = processedData.rawData.length;
+
+        // You would implement Humanitix and Moshtix parsing here
+        errors.push('Platform parsing not yet implemented for ' + platform);
+      }
+
+      // Update upload status
+      await prisma.upload.update({
+        where: { id: upload.id },
+        data: {
+          status: errors.length > 0 ? 'PARTIAL' : 'COMPLETED',
+          recordsProcessed,
+          recordsFailed,
+          processedAt: new Date(),
+          errorLog: errors.length > 0 ? errors.join('\n') : null,
         }
       });
 
-      let event;
-      if (existingEvent) {
-        event = existingEvent;
-      } else {
-        event = await prisma.event.create({
-          data: {
-            organizationId: organization.id,
-            name: parsedEvent.name,
-            date: parsedEvent.date,
-            venue: parsedEvent.venue,
-            platform: parsedEvent.platform,
-            externalId: parsedEvent.externalId,
-            status: parsedEvent.date < new Date() ? 'COMPLETED' : 'UPCOMING',
-            metadata: parsedEvent.metadata,
-          }
-        });
-      }
+      console.log('Upload processing complete:', {
+        eventsProcessed,
+        recordsProcessed,
+        recordsFailed,
+        errors: errors.length
+      });
 
-      // Save tickets
-      for (const ticket of parsedEvent.tickets) {
-        await prisma.ticket.create({
-          data: {
-            eventId: event.id,
-            uploadId: upload.id,
-            ticketType: ticket.ticketType,
-            price: ticket.price,
-            quantity: ticket.quantity,
-            sold: ticket.sold,
-            revenue: ticket.price * ticket.sold,
-            purchaseDate: ticket.purchaseDate,
-            buyerEmail: ticket.buyerEmail,
-            buyerPostcode: ticket.buyerPostcode,
-            metadata: ticket.metadata,
-          }
-        });
-      }
+      return NextResponse.json({
+        success: true,
+        uploadId: upload.id,
+        eventsProcessed,
+        recordsProcessed,
+        recordsFailed,
+        errors: errors.slice(0, 10), // Limit errors returned
+      });
+
+    } catch (processingError) {
+      console.error('Processing error:', processingError);
+
+      // Update upload as failed
+      await prisma.upload.update({
+        where: { id: upload.id },
+        data: {
+          status: 'FAILED',
+          errorLog: String(processingError),
+        }
+      });
+
+      throw processingError;
     }
 
-    // Update upload status
-    await prisma.upload.update({
-      where: { id: upload.id },
-      data: {
-        status: 'COMPLETED',
-        recordsProcessed: parseResult.successfulRows,
-        recordsFailed: parseResult.failedRows,
-        processedAt: new Date(),
-        errorLog: parseResult.errors.length > 0 ? parseResult.errors.join('\n') : null,
-      }
-    });
-
-    return NextResponse.json({
-      success: true,
-      uploadId: upload.id,
-      eventsProcessed: parseResult.events.length,
-      recordsProcessed: parseResult.successfulRows,
-      recordsFailed: parseResult.failedRows,
-      errors: parseResult.errors,
-    });
-
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('Upload API error:', error);
+
+    // Log the full error details
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+
     return NextResponse.json(
-      { error: 'Failed to process upload' },
+      {
+        error: 'Failed to process upload',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
