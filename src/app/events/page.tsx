@@ -38,9 +38,17 @@ export default function EventsPage() {
     try {
       const response = await fetch('/api/events');
       const data = await response.json();
-      setEvents(data);
+
+      // Check if data is an array or an error response
+      if (Array.isArray(data)) {
+        setEvents(data);
+      } else {
+        console.error('API error:', data);
+        setEvents([]);
+      }
     } catch (error) {
       console.error('Error fetching events:', error);
+      setEvents([]);
     } finally {
       setLoading(false);
     }

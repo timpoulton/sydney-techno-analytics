@@ -7,13 +7,13 @@ export async function GET() {
     const prisma = prismaModule.default;
 
     // Get all tickets with customer data
+    // Try new schema fields, fall back to old ones
     const tickets = await prisma.ticket.findMany({
       select: {
-        customerEmail: true,
-        customerName: true,
-        customerPostcode: true,
-        marketingOptIn: true,
+        buyerEmail: true,
+        buyerPostcode: true,
         quantity: true,
+        metadata: true,
       }
     });
 
@@ -23,26 +23,32 @@ export async function GET() {
     const postcodes = new Set<string>();
 
     tickets.forEach((ticket: any) => {
-      if (ticket.customerEmail) {
-        if (!customerMap.has(ticket.customerEmail)) {
-          customerMap.set(ticket.customerEmail, {
-            email: ticket.customerEmail,
-            name: ticket.customerName,
-            postcode: ticket.customerPostcode,
+      // Extract customer data from metadata or direct fields
+      const email = ticket.buyerEmail || ticket.metadata?.customerEmail;
+      const name = ticket.metadata?.customerName || '';
+      const postcode = ticket.buyerPostcode || ticket.metadata?.customerPostcode;
+      const marketingOptIn = ticket.metadata?.marketingOptIn || false;
+
+      if (email) {
+        if (!customerMap.has(email)) {
+          customerMap.set(email, {
+            email: email,
+            name: name,
+            postcode: postcode,
             totalTickets: 0,
-            marketingOptIn: ticket.marketingOptIn,
+            marketingOptIn: marketingOptIn,
           });
 
-          if (ticket.marketingOptIn) {
+          if (marketingOptIn) {
             totalOptIns++;
           }
         }
 
-        const customer = customerMap.get(ticket.customerEmail);
+        const customer = customerMap.get(email);
         customer.totalTickets += (ticket.quantity || 1);
 
-        if (ticket.customerPostcode) {
-          postcodes.add(ticket.customerPostcode);
+        if (postcode) {
+          postcodes.add(postcode);
         }
       }
     });
@@ -58,7 +64,10 @@ export async function GET() {
     // Get postcode distribution
     const postcodeList = Array.from(postcodes);
     const postcodeDistribution = postcodeList.reduce((acc: any, postcode: string) => {
-      const count = tickets.filter((t: any) => t.customerPostcode === postcode).length;
+      const count = tickets.filter((t: any) => {
+        const ticketPostcode = t.buyerPostcode || t.metadata?.customerPostcode;
+        return ticketPostcode === postcode;
+      }).length;
       acc[postcode] = count;
       return acc;
     }, {});

@@ -157,13 +157,17 @@ export async function POST(request: NextRequest) {
                   sold: ticket.quantity || 1,
                   revenue: ticket.price * (ticket.quantity || 1),
                   purchaseDate: new Date(ticket.purchaseDate),
-                  customerEmail: ticket.email,
-                  customerName: ticket.billingName,
-                  customerPostcode: ticket.postcode,
-                  marketingOptIn: ticket.marketingOptIn || false,
-                  orderNumber: ticket.orderNumber,
-                  barcode: ticket.barcode,
-                  metadata: ticket.metadata || {},
+                  // Use fallback for older schema
+                  buyerEmail: ticket.email,
+                  buyerPostcode: ticket.postcode,
+                  metadata: {
+                    customerEmail: ticket.email,
+                    customerName: ticket.billingName,
+                    marketingOptIn: ticket.marketingOptIn || false,
+                    orderNumber: ticket.orderNumber,
+                    barcode: ticket.barcode,
+                    ...ticket.metadata
+                  },
                 }
               });
               recordsProcessed++;
