@@ -30,6 +30,13 @@ export function normalizeTicketData(ticket: any, platform: string) {
     normalized.customerEmail = '';
   }
 
+  // Convert empty strings to empty for database (Prisma will handle as null)
+  if (!normalized.customerEmail) normalized.customerEmail = '';
+  if (!normalized.customerName) normalized.customerName = '';
+  if (!normalized.customerPostcode) normalized.customerPostcode = '';
+  if (!normalized.orderNumber) normalized.orderNumber = '';
+  if (!normalized.barcode) normalized.barcode = '';
+
   // Ensure price is a valid number
   if (isNaN(normalized.price) || normalized.price < 0) {
     normalized.price = 0;

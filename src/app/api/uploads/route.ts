@@ -159,26 +159,39 @@ export async function POST(request: NextRequest) {
           console.log('Processing', processedData.individualTickets.length, 'individual tickets');
           // Save individual ticket records with customer data
           for (const ticket of processedData.individualTickets) {
+            const normalizedTicket = normalizeTicketData(ticket, platform);
+
             try {
-              const normalizedTicket = normalizeTicketData(ticket, platform);
+              // Ensure price and revenue are valid numbers for Decimal type
+              const ticketPrice = parseFloat(normalizedTicket.price?.toString() || '0');
+              const ticketQuantity = parseInt(normalizedTicket.quantity?.toString() || '1');
+              const ticketRevenue = ticketPrice * ticketQuantity;
+
+              // Skip invalid tickets
+              if (isNaN(ticketPrice) || ticketPrice < 0) {
+                console.warn('Skipping ticket with invalid price:', normalizedTicket);
+                recordsFailed++;
+                errors.push(`Invalid price for ticket: ${normalizedTicket.orderNumber || 'unknown'}`);
+                continue;
+              }
 
               await prisma.ticket.create({
                 data: {
                   eventId: event.id,
                   uploadId: upload.id,
-                  ticketType: normalizedTicket.ticketType,
-                  price: normalizedTicket.price,
-                  quantity: normalizedTicket.quantity,
-                  sold: normalizedTicket.quantity,
-                  revenue: normalizedTicket.price * normalizedTicket.quantity,
+                  ticketType: normalizedTicket.ticketType || 'General Admission',
+                  price: ticketPrice,
+                  quantity: ticketQuantity,
+                  sold: ticketQuantity,
+                  revenue: ticketRevenue,
                   purchaseDate: new Date(normalizedTicket.purchaseDate),
                   // Store customer data with normalized field names
-                  customerEmail: normalizedTicket.customerEmail,
-                  customerPostcode: normalizedTicket.customerPostcode,
-                  customerName: normalizedTicket.customerName,
-                  marketingOptIn: normalizedTicket.marketingOptIn,
-                  orderNumber: normalizedTicket.orderNumber,
-                  barcode: normalizedTicket.barcode,
+                  customerEmail: normalizedTicket.customerEmail || null,
+                  customerPostcode: normalizedTicket.customerPostcode || null,
+                  customerName: normalizedTicket.customerName || null,
+                  marketingOptIn: normalizedTicket.marketingOptIn || false,
+                  orderNumber: normalizedTicket.orderNumber || null,
+                  barcode: normalizedTicket.barcode || null,
                   metadata: {
                     status: normalizedTicket.status,
                     discountCode: normalizedTicket.discountCode,
@@ -187,10 +200,11 @@ export async function POST(request: NextRequest) {
                 }
               });
               recordsProcessed++;
-            } catch (err) {
+            } catch (err: any) {
               console.error('Error saving ticket:', err);
               recordsFailed++;
-              errors.push(`Failed to save ticket: ${err}`);
+              const errorMessage = err.message || err.toString();
+              errors.push(`Ticket ${normalizedTicket.orderNumber || 'unknown'}: ${errorMessage}`);
             }
           }
         } else {
@@ -266,25 +280,38 @@ export async function POST(request: NextRequest) {
         if (processedData.individualTickets && processedData.individualTickets.length > 0) {
           console.log('Processing', processedData.individualTickets.length, 'individual Humanitix tickets');
           for (const ticket of processedData.individualTickets) {
+            const normalizedTicket = normalizeTicketData(ticket, platform);
+
             try {
-              const normalizedTicket = normalizeTicketData(ticket, platform);
+              // Ensure price and revenue are valid numbers for Decimal type
+              const ticketPrice = parseFloat(normalizedTicket.price?.toString() || '0');
+              const ticketQuantity = parseInt(normalizedTicket.quantity?.toString() || '1');
+              const ticketRevenue = ticketPrice * ticketQuantity;
+
+              // Skip invalid tickets
+              if (isNaN(ticketPrice) || ticketPrice < 0) {
+                console.warn('Skipping Humanitix ticket with invalid price:', normalizedTicket);
+                recordsFailed++;
+                errors.push(`Invalid price for ticket: ${normalizedTicket.orderNumber || 'unknown'}`);
+                continue;
+              }
 
               await prisma.ticket.create({
                 data: {
                   eventId: event.id,
                   uploadId: upload.id,
-                  ticketType: normalizedTicket.ticketType,
-                  price: normalizedTicket.price,
-                  quantity: normalizedTicket.quantity,
-                  sold: normalizedTicket.quantity,
-                  revenue: normalizedTicket.price * normalizedTicket.quantity,
+                  ticketType: normalizedTicket.ticketType || 'General Admission',
+                  price: ticketPrice,
+                  quantity: ticketQuantity,
+                  sold: ticketQuantity,
+                  revenue: ticketRevenue,
                   purchaseDate: new Date(normalizedTicket.purchaseDate),
-                  customerEmail: normalizedTicket.customerEmail,
-                  customerPostcode: normalizedTicket.customerPostcode,
-                  customerName: normalizedTicket.customerName,
-                  marketingOptIn: normalizedTicket.marketingOptIn,
-                  orderNumber: normalizedTicket.orderNumber,
-                  barcode: normalizedTicket.barcode,
+                  customerEmail: normalizedTicket.customerEmail || null,
+                  customerPostcode: normalizedTicket.customerPostcode || null,
+                  customerName: normalizedTicket.customerName || null,
+                  marketingOptIn: normalizedTicket.marketingOptIn || false,
+                  orderNumber: normalizedTicket.orderNumber || null,
+                  barcode: normalizedTicket.barcode || null,
                   metadata: {
                     status: normalizedTicket.status,
                     discountCode: normalizedTicket.discountCode,
@@ -293,10 +320,11 @@ export async function POST(request: NextRequest) {
                 }
               });
               recordsProcessed++;
-            } catch (err) {
+            } catch (err: any) {
               console.error('Error saving Humanitix ticket:', err);
               recordsFailed++;
-              errors.push(`Failed to save ticket: ${err}`);
+              const errorMessage = err.message || err.toString();
+              errors.push(`Humanitix ticket ${normalizedTicket.orderNumber || 'unknown'}: ${errorMessage}`);
             }
           }
         }
@@ -334,13 +362,28 @@ export async function POST(request: NextRequest) {
         errors: errors.length
       });
 
+      // Create a summary of errors by type
+      const errorSummary: Record<string, number> = {};
+      errors.forEach(error => {
+        // Extract error type from message
+        const errorType = error.includes('Invalid price') ? 'Invalid price' :
+                         error.includes('Invalid date') ? 'Invalid date' :
+                         error.includes('duplicate key') ? 'Duplicate record' :
+                         'Other error';
+        errorSummary[errorType] = (errorSummary[errorType] || 0) + 1;
+      });
+
       return NextResponse.json({
         success: true,
         uploadId: upload.id,
         eventsProcessed,
         recordsProcessed,
         recordsFailed,
-        errors: errors.slice(0, 10),
+        errors: errors.slice(0, 5), // Only show first 5 detailed errors
+        errorSummary: recordsFailed > 0 ? errorSummary : undefined,
+        message: recordsProcessed > 0
+          ? `Successfully processed ${recordsProcessed} tickets${recordsFailed > 0 ? `, ${recordsFailed} failed` : ''}`
+          : 'No records were processed'
       });
 
     } catch (processingError) {
