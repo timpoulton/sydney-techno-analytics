@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,70 +8,50 @@ datasource db {
 }
 
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users         User[]
+  id            String         @id @default(uuid())
+  name          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  customMetrics CustomMetric[]
   events        Event[]
   uploads       Upload[]
-  customMetrics CustomMetric[]
+  users         User[]
 }
 
 model User {
-  id             String    @id @default(uuid())
-  email          String    @unique
+  id             String         @id @default(uuid())
+  email          String         @unique
   name           String
   organizationId String
-  role           Role      @default(MEMBER)
+  role           Role           @default(MEMBER)
   lastLoginAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id])
-  uploads      Upload[]
-  customMetrics CustomMetric[]
-}
-
-enum Role {
-  ADMIN
-  MEMBER
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  customMetrics  CustomMetric[]
+  uploads        Upload[]
+  organization   Organization   @relation(fields: [organizationId], references: [id])
 }
 
 model Event {
-  id             String       @id @default(uuid())
+  id             String        @id @default(uuid())
   organizationId String
   name           String
   date           DateTime
   venue          String
-  city           String       @default("Sydney")
+  city           String        @default("Sydney")
   capacity       Int?
-  status         EventStatus  @default(UPCOMING)
+  status         EventStatus   @default(UPCOMING)
   platform       Platform
   externalId     String
   metadata       Json?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id])
-  tickets      Ticket[]
-  artists      EventArtist[]
-  metrics      EventMetrics?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  artists        EventArtist[]
+  metrics        EventMetrics?
+  tickets        Ticket[]
 
   @@unique([organizationId, platform, externalId])
-}
-
-enum EventStatus {
-  UPCOMING
-  COMPLETED
-  CANCELLED
-}
-
-enum Platform {
-  RESIDENT_ADVISOR
-  HUMANITIX
-  MOSHTIX
 }
 
 model Upload {
@@ -90,17 +67,9 @@ model Upload {
   errorLog         String?
   processedAt      DateTime?
   createdAt        DateTime     @default(now())
-
-  organization Organization @relation(fields: [organizationId], references: [id])
-  user         User         @relation(fields: [userId], references: [id])
-  tickets      Ticket[]
-}
-
-enum UploadStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
+  tickets          Ticket[]
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  user             User         @relation(fields: [userId], references: [id])
 }
 
 model Ticket {
@@ -113,32 +82,30 @@ model Ticket {
   sold             Int
   revenue          Decimal
   purchaseDate     DateTime
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  barcode          String?
   customerEmail    String?
   customerName     String?
   customerPostcode String?
   marketingOptIn   Boolean  @default(false)
   orderNumber      String?
-  barcode          String?
-  metadata         Json?
-  createdAt        DateTime @default(now())
-
-  event  Event  @relation(fields: [eventId], references: [id])
-  upload Upload @relation(fields: [uploadId], references: [id])
+  event            Event    @relation(fields: [eventId], references: [id])
+  upload           Upload   @relation(fields: [uploadId], references: [id])
 
   @@index([customerEmail])
   @@index([customerPostcode])
 }
 
 model Artist {
-  id          String   @id @default(uuid())
+  id          String        @id @default(uuid())
   name        String
   bio         String?
   imageUrl    String?
   socialLinks Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  events EventArtist[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  events      EventArtist[]
 }
 
 model EventArtist {
@@ -147,9 +114,8 @@ model EventArtist {
   performanceOrder Int
   performanceTime  String?
   createdAt        DateTime @default(now())
-
-  event  Event  @relation(fields: [eventId], references: [id])
-  artist Artist @relation(fields: [artistId], references: [id])
+  artist           Artist   @relation(fields: [artistId], references: [id])
+  event            Event    @relation(fields: [eventId], references: [id])
 
   @@id([eventId, artistId])
 }
@@ -184,8 +150,7 @@ model EventMetrics {
   lastCalculated      DateTime
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-
-  event Event @relation(fields: [eventId], references: [id])
+  event               Event    @relation(fields: [eventId], references: [id])
 }
 
 model CustomMetric {
@@ -199,9 +164,32 @@ model CustomMetric {
   createdBy      String
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  creator        User           @relation(fields: [createdBy], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+}
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  creator      User         @relation(fields: [createdBy], references: [id])
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum EventStatus {
+  UPCOMING
+  COMPLETED
+  CANCELLED
+}
+
+enum Platform {
+  RESIDENT_ADVISOR
+  HUMANITIX
+  MOSHTIX
+}
+
+enum UploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }
 
 enum MetricCategory {

@@ -48,23 +48,30 @@ export async function GET() {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    const events = await prisma.event.findMany({
+    // More efficient: Get tickets with their event dates for aggregation
+    const ticketsWithDates = await prisma.ticket.findMany({
       where: {
-        date: {
-          gte: sixMonthsAgo
+        event: {
+          date: {
+            gte: sixMonthsAgo
+          }
         }
       },
-      include: {
-        tickets: true
+      select: {
+        revenue: true,
+        event: {
+          select: {
+            date: true
+          }
+        }
       }
     });
 
     // Calculate monthly revenue
     const monthlyRevenueMap = new Map<string, number>();
-    events.forEach((event: any) => {
-      const monthKey = new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
-      const eventRevenue = event.tickets.reduce((sum: number, ticket: any) => sum + Number(ticket.revenue || 0), 0);
-      monthlyRevenueMap.set(monthKey, (monthlyRevenueMap.get(monthKey) || 0) + eventRevenue);
+    ticketsWithDates.forEach((ticket: any) => {
+      const monthKey = new Date(ticket.event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+      monthlyRevenueMap.set(monthKey, (monthlyRevenueMap.get(monthKey) || 0) + Number(ticket.revenue || 0));
     });
 
     const monthlyRevenue = Array.from(monthlyRevenueMap.entries())

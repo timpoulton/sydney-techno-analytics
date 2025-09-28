@@ -157,12 +157,17 @@ export async function POST(request: NextRequest) {
                   sold: ticket.quantity || 1,
                   revenue: ticket.price * (ticket.quantity || 1),
                   purchaseDate: new Date(ticket.purchaseDate),
-                  // Use fallback for older schema
-                  buyerEmail: ticket.email,
-                  buyerPostcode: ticket.postcode,
+                  // Store customer data in correct fields - handle both field name formats
+                  customerEmail: ticket.customerEmail || ticket.email,
+                  customerPostcode: ticket.customerPostcode || ticket.postcode,
+                  customerName: ticket.customerName || ticket.billingName,
+                  marketingOptIn: ticket.marketingOptIn || false,
+                  orderNumber: ticket.orderNumber,
+                  barcode: ticket.barcode,
                   metadata: {
-                    customerEmail: ticket.email,
-                    customerName: ticket.billingName,
+                    customerEmail: ticket.customerEmail || ticket.email,
+                    customerName: ticket.customerName || ticket.billingName,
+                    customerPostcode: ticket.customerPostcode || ticket.postcode,
                     marketingOptIn: ticket.marketingOptIn || false,
                     orderNumber: ticket.orderNumber,
                     barcode: ticket.barcode,
@@ -219,7 +224,7 @@ export async function POST(request: NextRequest) {
       await prisma.upload.update({
         where: { id: upload.id },
         data: {
-          status: errors.length > 0 ? 'PARTIAL' : 'COMPLETED',
+          status: recordsProcessed > 0 ? 'COMPLETED' : 'FAILED',
           recordsProcessed,
           recordsFailed,
           processedAt: new Date(),
@@ -339,7 +344,14 @@ export async function DELETE(request: NextRequest) {
     const prismaModule = await import('@/lib/prisma');
     const prisma = prismaModule.default;
 
-    // First, delete all tickets associated with this upload
+    // Get all unique eventIds from tickets that will be deleted
+    const affectedEvents = await prisma.ticket.findMany({
+      where: { uploadId },
+      select: { eventId: true },
+      distinct: ['eventId']
+    });
+
+    // Delete all tickets associated with this upload
     await prisma.ticket.deleteMany({
       where: { uploadId }
     });
@@ -349,16 +361,18 @@ export async function DELETE(request: NextRequest) {
       where: { id: uploadId }
     });
 
-    // Check if we should also delete the event (if no tickets remain)
-    const remainingTickets = await prisma.ticket.count({
-      where: { eventId: deletedUpload.eventId }
-    });
-
-    if (remainingTickets === 0 && deletedUpload.eventId) {
-      // Delete the event if no tickets remain
-      await prisma.event.delete({
-        where: { id: deletedUpload.eventId }
+    // Check if we should also delete orphaned events (if no tickets remain)
+    for (const ticket of affectedEvents) {
+      const remainingTickets = await prisma.ticket.count({
+        where: { eventId: ticket.eventId }
       });
+
+      if (remainingTickets === 0) {
+        // Delete the event if no tickets remain
+        await prisma.event.delete({
+          where: { id: ticket.eventId }
+        });
+      }
     }
 
     return NextResponse.json({

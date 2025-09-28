@@ -7,11 +7,12 @@ export async function GET() {
     const prisma = prismaModule.default;
 
     // Get all tickets with customer data
-    // Try new schema fields, fall back to old ones
     const tickets = await prisma.ticket.findMany({
       select: {
-        buyerEmail: true,
-        buyerPostcode: true,
+        customerEmail: true,
+        customerPostcode: true,
+        customerName: true,
+        marketingOptIn: true,
         quantity: true,
         metadata: true,
       }
@@ -23,11 +24,11 @@ export async function GET() {
     const postcodes = new Set<string>();
 
     tickets.forEach((ticket: any) => {
-      // Extract customer data from metadata or direct fields
-      const email = ticket.buyerEmail || ticket.metadata?.customerEmail;
-      const name = ticket.metadata?.customerName || '';
-      const postcode = ticket.buyerPostcode || ticket.metadata?.customerPostcode;
-      const marketingOptIn = ticket.metadata?.marketingOptIn || false;
+      // Extract customer data from direct fields or metadata fallback
+      const email = ticket.customerEmail || ticket.metadata?.customerEmail;
+      const name = ticket.customerName || ticket.metadata?.customerName || '';
+      const postcode = ticket.customerPostcode || ticket.metadata?.customerPostcode;
+      const marketingOptIn = ticket.marketingOptIn || ticket.metadata?.marketingOptIn || false;
 
       if (email) {
         if (!customerMap.has(email)) {
@@ -65,7 +66,7 @@ export async function GET() {
     const postcodeList = Array.from(postcodes);
     const postcodeDistribution = postcodeList.reduce((acc: any, postcode: string) => {
       const count = tickets.filter((t: any) => {
-        const ticketPostcode = t.buyerPostcode || t.metadata?.customerPostcode;
+        const ticketPostcode = t.customerPostcode || t.metadata?.customerPostcode;
         return ticketPostcode === postcode;
       }).length;
       acc[postcode] = count;
