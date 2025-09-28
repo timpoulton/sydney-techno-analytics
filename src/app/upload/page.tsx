@@ -102,8 +102,8 @@ export default function UploadPage() {
     // Group tickets by type
     const ticketGroups = new Map<string, any[]>();
     let eventName = 'Event from RA Import';
-    let earliestDate: Date | null = null;
-    let latestDate: Date | null = null;
+    let earliestDate: Date | undefined;
+    let latestDate: Date | undefined;
 
     // Extract event name from filename if possible
     if (file?.name) {

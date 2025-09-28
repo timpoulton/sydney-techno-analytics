@@ -1,23 +1,38 @@
-import { PrismaClient } from '@prisma/client';
+// Dynamic Prisma client that handles missing database gracefully
+let PrismaClient: any;
+let prisma: any;
 
-declare global {
-  var prisma: PrismaClient | undefined;
-}
+try {
+  // Try to import Prisma Client
+  const prismaModule = require('@prisma/client');
+  PrismaClient = prismaModule.PrismaClient;
 
-// PrismaClient is attached to the `global` object in development to prevent
-// exhausting your database connection limit.
-//
-// Learn more:
-// https://pris.ly/d/help/next-js-best-practices
+  // Create singleton instance
+  const globalForPrisma = global as any;
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = new PrismaClient({
+      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    });
+  }
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  prisma = globalForPrisma.prisma;
+} catch (e) {
+  console.warn('Prisma Client not generated. Database features will be unavailable.');
+
+  // Create a mock Prisma client that returns helpful errors
+  prisma = new Proxy({}, {
+    get() {
+      return new Proxy(() => {}, {
+        apply() {
+          throw new Error('Database not configured. Please follow DATABASE_SETUP.md');
+        },
+        get() {
+          return this;
+        }
+      });
+    }
   });
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+}
 
 export default prisma;

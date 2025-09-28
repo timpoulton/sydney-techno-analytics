@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Platform } from '@prisma/client';
-import prisma from '@/lib/prisma';
+
+// Platform enum - define locally to avoid Prisma dependency at build time
+enum Platform {
+  RESIDENT_ADVISOR = 'RESIDENT_ADVISOR',
+  HUMANITIX = 'HUMANITIX',
+  MOSHTIX = 'MOSHTIX'
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,13 +17,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: 'Database not configured',
-          details: 'Please set up a database following the instructions in DATABASE_SETUP.md'
+          details: 'Please set up a database following the instructions in DATABASE_SETUP.md',
+          instructions: [
+            '1. Create a free database at https://supabase.com',
+            '2. Add DATABASE_URL to Vercel Environment Variables',
+            '3. Redeploy your application'
+          ]
         },
         { status: 503 }
       );
     }
 
-    // Parse JSON body instead of FormData
+    // Parse JSON body
     const body = await request.json();
     const { platform, fileName, processedData } = body;
 
@@ -36,6 +46,10 @@ export async function POST(request: NextRequest) {
     if (!platform || !Object.values(Platform).includes(platform as Platform)) {
       return NextResponse.json({ error: 'Invalid platform' }, { status: 400 });
     }
+
+    // Lazy load Prisma to avoid build-time dependency
+    const prismaModule = await import('@/lib/prisma');
+    const prisma = prismaModule.default;
 
     // Get the organization (using the first one for now)
     const organization = await prisma.organization.findFirst();
@@ -76,8 +90,8 @@ export async function POST(request: NextRequest) {
         organizationId: finalOrg.id,
         userId: user.id,
         filename: fileName || 'upload.csv',
-        fileSize: 0, // We don't have the actual file size anymore
-        platform: platform as Platform,
+        fileSize: 0,
+        platform: platform,
         status: 'PROCESSING',
       }
     });
@@ -101,7 +115,7 @@ export async function POST(request: NextRequest) {
         let event = await prisma.event.findFirst({
           where: {
             organizationId: finalOrg.id,
-            platform: Platform.RESIDENT_ADVISOR,
+            platform: platform,
             externalId,
           }
         });
@@ -113,7 +127,7 @@ export async function POST(request: NextRequest) {
               name: processedData.eventName || 'Unnamed Event',
               date: eventDate,
               venue: processedData.venue || 'TBA',
-              platform: Platform.RESIDENT_ADVISOR,
+              platform: platform,
               externalId,
               status: eventDate < new Date() ? 'COMPLETED' : 'UPCOMING',
               metadata: {
@@ -160,11 +174,7 @@ export async function POST(request: NextRequest) {
       } else if (processedData.rawData) {
         // Handle raw data from other platforms
         console.log('Processing raw data with', processedData.totalRows || processedData.rawData.length, 'rows');
-
-        // For now, just count the records
         recordsProcessed = processedData.rawData.length;
-
-        // You would implement Humanitix and Moshtix parsing here
         errors.push('Platform parsing not yet implemented for ' + platform);
       }
 
@@ -193,7 +203,7 @@ export async function POST(request: NextRequest) {
         eventsProcessed,
         recordsProcessed,
         recordsFailed,
-        errors: errors.slice(0, 10), // Limit errors returned
+        errors: errors.slice(0, 10),
       });
 
     } catch (processingError) {
@@ -223,7 +233,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: 'Failed to process upload',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
+        note: 'Check DATABASE_SETUP.md for setup instructions'
       },
       { status: 500 }
     );
@@ -232,6 +243,18 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    // Check if database is configured
+    if (!process.env.DATABASE_URL) {
+      return NextResponse.json({
+        message: 'Database not configured',
+        instructions: 'Please follow DATABASE_SETUP.md to configure your database'
+      });
+    }
+
+    // Lazy load Prisma
+    const prismaModule = await import('@/lib/prisma');
+    const prisma = prismaModule.default;
+
     const uploads = await prisma.upload.findMany({
       orderBy: { createdAt: 'desc' },
       include: {

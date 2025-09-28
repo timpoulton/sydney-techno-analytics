@@ -1,0 +1,37 @@
+// This is a minimal schema for production builds when DATABASE_URL is not available
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Minimal models just for type generation
+model Organization {
+  id String @id @default(uuid())
+}
+
+model User {
+  id String @id @default(uuid())
+  email String @unique
+}
+
+model Event {
+  id String @id @default(uuid())
+}
+
+model Upload {
+  id String @id @default(uuid())
+}
+
+model Ticket {
+  id String @id @default(uuid())
+}
+
+enum Platform {
+  RESIDENT_ADVISOR
+  HUMANITIX
+  MOSHTIX
+}
