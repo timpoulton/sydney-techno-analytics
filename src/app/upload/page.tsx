@@ -107,9 +107,15 @@ export default function UploadPage() {
 
     // Extract event name from filename if possible
     if (file?.name) {
-      const match = file.name.match(/\d{8}-(.*?)-/);
+      const match = file.name.match(/\d{8}-(.*?)(-list)?\.csv/i);
       if (match) {
-        eventName = match[1].replace(/_/g, ' ');
+        // Replace underscores with spaces and handle camelCase
+        eventName = match[1]
+          .replace(/_/g, ' ')
+          .replace(/([a-z])([A-Z])/g, '$1 $2')
+          .replace(/WIP/g, ' WIP ')
+          .replace(/\s+/g, ' ')
+          .trim();
       }
     }
 
