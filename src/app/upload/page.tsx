@@ -371,6 +371,12 @@ export default function UploadPage() {
         };
       }
 
+      if (!processedData) {
+        setError('Failed to process CSV data. Please check the format.');
+        setUploading(false);
+        return;
+      }
+
       console.log('Sending processed data to API:', {
         ...processedData,
         tickets: processedData.tickets?.map((t: any) => ({
