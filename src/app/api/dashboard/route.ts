@@ -83,7 +83,7 @@ export async function GET() {
       }
     });
 
-    const platformBreakdown = platformCounts.map(p => ({
+    const platformBreakdown = platformCounts.map((p: any) => ({
       platform: p.platform,
       count: p._count.id
     }));
