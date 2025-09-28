@@ -61,9 +61,9 @@ export async function GET() {
 
     // Calculate monthly revenue
     const monthlyRevenueMap = new Map<string, number>();
-    events.forEach(event => {
+    events.forEach((event: any) => {
       const monthKey = new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
-      const eventRevenue = event.tickets.reduce((sum, ticket) => sum + Number(ticket.revenue || 0), 0);
+      const eventRevenue = event.tickets.reduce((sum: number, ticket: any) => sum + Number(ticket.revenue || 0), 0);
       monthlyRevenueMap.set(monthKey, (monthlyRevenueMap.get(monthKey) || 0) + eventRevenue);
     });
 
